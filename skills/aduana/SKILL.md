@@ -60,3 +60,4 @@ El hook del plugin (`hooks/aduana-gate.py`, PreToolUse sobre Bash y PowerShell) 
 - `~/.claude/aduana/registro.json` — veredicto + huella SHA-256 de todo lo revisado
 - `~/.claude/aduana/cuarentena/` — lo que espera revisión o fue rechazado
 - `tests/probar.sh` — prueba el flujo completo con skills de juguete en un `~/.claude` temporal
+- `tests/probar-hook.sh` — 26 comandos que el hook debe bloquear o dejar pasar

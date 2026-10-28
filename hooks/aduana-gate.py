@@ -24,29 +24,54 @@ if not cmd or "aduana.py" in cmd or re.search(r"\bADUANA_OK=1\b", cmd):
     sys.exit(0)
 
 
+SHELL = r"\b(bash|sh|zsh|dash|ksh|pwsh|powershell)(\.exe)?\b"
+
+
 def sin_heredocs(texto: str) -> str:
-    """Quita el cuerpo de los heredocs (<<EOF ... EOF) y de los here-strings de PowerShell."""
-    texto = re.sub(r"@'.*?'@|@\".*?\"@", "", texto, flags=re.S)
-    salida, cierre = [], None
+    """Quita el cuerpo de los heredocs y here-strings que son texto (un mensaje, un archivo).
+    Si el heredoc alimenta a una shell (`bash <<EOF`, `cat <<EOF | sh`, `@'...'@ | iex`),
+    su cuerpo se deja: ahí sí son comandos."""
+    if not re.search(r"\b(iex|Invoke-Expression)\b", texto, re.I):
+        texto = re.sub(r"@'.*?'@|@\".*?\"@", "", texto, flags=re.S)
+    salida, cierre, guardar = [], None, False
     for linea in texto.splitlines():
         if cierre is not None:
             if linea.strip() == cierre:
                 cierre = None
+            elif guardar:
+                salida.append(linea)
             continue
         salida.append(linea)
         m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", linea)
         if m:
-            cierre = m.group(1)
+            cierre, guardar = m.group(1), bool(re.search(SHELL, linea, re.I))
     return "\n".join(salida)
 
 
+def con_shells_anidadas(texto: str) -> str:
+    """Agrega como líneas aparte lo que va dentro de `bash -c "..."` o `pwsh -Command '...'`."""
+    extra = [m.group(4) for m in re.finditer(
+        SHELL + r"[^'\"\n]*?\s-(?:c|Command)\s+(['\"])(.*?)\3", texto, re.I | re.S)]
+    return "\n".join([texto, *extra])
+
+
 def segmentos(texto: str):
-    for parte in re.split(r"\|\||&&|[;|\n]", texto):
+    for parte in re.split(r"\|\||&&|[;|&\n]", texto):
         parte = parte.strip().lstrip("({ ").strip()
         # Quita asignaciones de variables al inicio (VAR=x cmd)
         parte = re.sub(r"^(?:\w+=\S*\s+)+", "", parte)
         if parte:
             yield parte
+
+
+def sin_envoltorio(seg: str) -> str:
+    """Si el comando va detrás de un envoltorio (privilegios, env, nohup, xargs…), lo saca:
+    salta la primera palabra, sus opciones y asignaciones VAR=x."""
+    t = seg.split()
+    i = 1
+    while i < len(t) and (t[i].startswith("-") or re.match(r"^\w+=", t[i])):
+        i += 1
+    return " ".join(t[i:])
 
 
 DESTINO = re.compile(r"\.claude[/\\]+(skills|agents|plugins)\b", re.I)
@@ -110,12 +135,13 @@ def motivo(seg: str, dentro: bool):
 
 
 dentro = False
-for seg in segmentos(sin_heredocs(cmd)):
+for seg in segmentos(con_shells_anidadas(sin_heredocs(cmd))):
     t = partes(seg)
     if t[0].lower() in ("cd", "pushd", "set-location", "sl"):
         dentro = len(t) > 1 and bool(DESTINO.search(t[-1]))
         continue
-    que = motivo(seg, dentro)
+    interior = sin_envoltorio(seg)
+    que = motivo(seg, dentro) or (interior and motivo(interior, dentro))
     if que:
             sys.stderr.write(
                 f"BLOQUEADO por la Aduana: intento de {que} sin revisión.\n"

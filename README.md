@@ -121,7 +121,7 @@ hooks/aduana-gate.py             el hook que bloquea instalaciones sin revisar
 hooks/hooks.json                 registro del hook (PreToolUse, Bash y PowerShell)
 skills/aduana/SKILL.md           el flujo que sigue Claude
 skills/aduana/scripts/aduana.py  el escáner, la cuarentena y el registro (solo librería estándar)
-skills/aduana/tests/probar.sh    prueba del flujo completo con skills de juguete
+skills/aduana/tests/            pruebas del flujo (probar.sh) y del hook (probar-hook.sh)
 ```
 
 ## Créditos
