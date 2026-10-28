@@ -1,0 +1,17 @@
+{
+  "description": "Aduana: bloquea instalaciones de terceros en ~/.claude que no pasaron por la revisión",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c '' 2>/dev/null && P=python3 || P=python; \"$P\" -I \"${CLAUDE_PLUGIN_ROOT}/hooks/aduana-gate.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

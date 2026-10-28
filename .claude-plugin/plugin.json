@@ -1,0 +1,15 @@
+{
+  "name": "aduana",
+  "displayName": "Aduana",
+  "version": "1.0.0",
+  "description": "Nada de terceros entra a tu Claude Code sin revisión: pone en cuarentena skills, agentes, plugins y repos, los escanea (skill-security-auditor + Windows Defender + metadatos) y solo los instala con PASS o con tu OK. Un hook bloquea las instalaciones que se salten la revisión. En español.",
+  "author": {
+    "name": "Alexander Cast · El Máster IA",
+    "url": "https://github.com/El-Master-IA"
+  },
+  "homepage": "https://la-boveda-del-master.vercel.app/lab/aduana",
+  "repository": "https://github.com/El-Master-IA/aduana",
+  "license": "MIT",
+  "keywords": ["seguridad", "skills", "supply-chain", "prompt-injection", "cuarentena", "hooks", "español", "claude-code-plugin"],
+  "hooks": "./hooks/hooks.json"
+}
