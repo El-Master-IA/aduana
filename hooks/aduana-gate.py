@@ -49,19 +49,74 @@ def segmentos(texto: str):
             yield parte
 
 
-DESTINO = r"\.claude[/\\]+(skills|agents|plugins)\b"
+DESTINO = re.compile(r"\.claude[/\\]+(skills|agents|plugins)\b", re.I)
+COPIAR = {"cp", "mv", "rsync", "robocopy", "xcopy", "copy", "move", "copy-item", "move-item",
+          "expand-archive", "unzip", "tar"}
+# Opción que nombra el destino, por comando (el resto usa el último argumento)
+OPCION_DESTINO = {"copy-item": "-destination", "move-item": "-destination",
+                  "expand-archive": "-destinationpath", "unzip": "-d", "tar": "-c", "cp": "-t", "mv": "-t"}
 REGLAS = [
-    (rf"^git\s+clone\b.*{DESTINO}", "clonar un repo dentro de ~/.claude"),
-    (rf"^(cp|mv|rsync|robocopy|xcopy|copy|move|Copy-Item|Move-Item|Expand-Archive|unzip|tar)\b.*{DESTINO}",
-     "copiar o descomprimir algo dentro de ~/.claude"),
     (r"^npx\s+(-y\s+)?skills?\s+add\b", "instalar skills con npx"),
     (r"^claude\s+plugins?\s+(install|marketplace\s+add)\b", "instalar un plugin o marketplace"),
     (r"^(?:\w+\s+)?npm\s+(i|install|add)\b.*\s(-g|--global)\b", "instalar un paquete npm global"),
 ]
 
-for seg in segmentos(sin_heredocs(cmd)):
+
+def partes(seg: str) -> list:
+    return [t.strip("'\"") for t in seg.split()]
+
+
+def destino(t: list):
+    """Devuelve la ruta destino de un comando de copia o de git clone (None si no hay)."""
+    prog = t[0].lower()
+    if prog == "git":
+        con_valor = {"--depth", "-b", "--branch", "-o", "--origin", "--reference", "-c", "--config",
+                     "--filter", "--separate-git-dir", "-j", "--jobs", "-u", "--upload-pack"}
+        pos, saltar = [], False
+        for x in t[2:]:
+            if saltar:
+                saltar = False
+            elif x.startswith("-"):
+                saltar = x in con_valor
+            else:
+                pos.append(x)
+        return pos[1] if len(pos) > 1 else ""   # "" = clona en la carpeta actual
+    opcion = OPCION_DESTINO.get(prog)
+    for i, x in enumerate(t[1:-1], 1):
+        if opcion and x.lower() == opcion:
+            return t[i + 1]
+        if x.lower().startswith(("--target-directory=", "--directory=")):
+            return x.split("=", 1)[1]
+    if prog == "robocopy":
+        return t[2] if len(t) > 2 else None
+    if prog in ("unzip", "tar", "expand-archive"):
+        return ""                                # sin opción: descomprime en la carpeta actual
+    pos = [x for x in t[1:] if not x.startswith("-")]
+    return pos[-1] if len(pos) > 1 else None
+
+
+def motivo(seg: str, dentro: bool):
     for regla, que in REGLAS:
         if re.search(regla, seg, re.I):
+            return que
+    t = partes(seg)
+    es_clone = len(t) > 1 and t[0].lower() == "git" and t[1].lower() == "clone"
+    if es_clone or t[0].lower() in COPIAR:
+        d = destino(t)
+        # Destino dentro de ~/.claude, o relativo después de un cd hacia allá
+        if d is not None and (DESTINO.search(d) or (dentro and not re.match(r"^([a-z]:|[/\\~$])", d, re.I))):
+            return "clonar un repo dentro de ~/.claude" if es_clone else "copiar o descomprimir algo dentro de ~/.claude"
+    return None
+
+
+dentro = False
+for seg in segmentos(sin_heredocs(cmd)):
+    t = partes(seg)
+    if t[0].lower() in ("cd", "pushd", "set-location", "sl"):
+        dentro = len(t) > 1 and bool(DESTINO.search(t[-1]))
+        continue
+    que = motivo(seg, dentro)
+    if que:
             sys.stderr.write(
                 f"BLOQUEADO por la Aduana: intento de {que} sin revisión.\n"
                 "Usa la skill `aduana`: trae el origen a ~/.claude/aduana/cuarentena, escanéalo con "
