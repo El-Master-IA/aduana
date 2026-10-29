@@ -134,4 +134,4 @@ MIT, © El Máster IA. Úsalo, modifícalo y compártelo. Los logos y marcas de 
 
 ---
 
-Hecho con Claude Code por **El Máster IA · Alexander Cast**. Parte de [El Laboratorio](https://la-boveda-del-master.vercel.app/lab).
+Hecho con Claude Code por **El Máster IA · Alexander Cast**. Parte de [El Laboratorio](https://www.elmasteria.com/lab).
