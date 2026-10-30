@@ -1,5 +1,7 @@
 # Aduana para Claude Code
 
+[![Pruebas](https://github.com/El-Master-IA/aduana/actions/workflows/pruebas.yml/badge.svg)](https://github.com/El-Master-IA/aduana/actions/workflows/pruebas.yml)
+
 **Nada de terceros entra a tu Claude Code sin revisión.** Cada skill, agente, plugin o repo que quieras instalar pasa primero por una cuarentena, se escanea y solo entra con veredicto limpio o con tu OK. En unos 5 minutos queda instalada, y también revisa lo que ya tienes.
 
 Gratis y de código abierto. Un solo prompt lo instala todo: lo copias, lo pegas y respondes unas preguntas.
