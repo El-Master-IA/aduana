@@ -76,10 +76,18 @@ def sin_envoltorio(seg: str) -> str:
 
 DESTINO = re.compile(r"\.claude[/\\]+(skills|agents|plugins)\b", re.I)
 COPIAR = {"cp", "mv", "rsync", "robocopy", "xcopy", "copy", "move", "copy-item", "move-item",
-          "expand-archive", "unzip", "tar"}
+          "expand-archive", "unzip", "tar", "ln"}
 # Opción que nombra el destino, por comando (el resto usa el último argumento)
 OPCION_DESTINO = {"copy-item": "-destination", "move-item": "-destination",
-                  "expand-archive": "-destinationpath", "unzip": "-d", "tar": "-c", "cp": "-t", "mv": "-t"}
+                  "expand-archive": "-destinationpath", "unzip": "-d", "tar": "-c", "cp": "-t", "mv": "-t",
+                  "ln": "-t"}
+# Descargas: opciones largas y de PowerShell (sin distinguir mayúsculas) que nombran la salida
+DESCARGAS = {"curl": {"--output", "--output-dir", "-outfile"}, "wget": {"--output-document", "--directory-prefix", "-outfile"},
+             "invoke-webrequest": {"-outfile"}, "iwr": {"-outfile"},
+             "invoke-restmethod": {"-outfile"}, "irm": {"-outfile"}}
+# Letras de opción corta que llevan la salida (distinguen mayúsculas): curl -o, wget -O / -P
+CORTAS_SALIDA = {"curl": "o", "wget": "OP"}
+GIT_GLOBAL_CON_VALOR = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 REGLAS = [
     (r"^npx\s+(-y\s+)?skills?\s+add\b", "instalar skills con npx"),
     (r"^claude\s+plugins?\s+(install|marketplace\s+add)\b", "instalar un plugin o marketplace"),
@@ -91,6 +99,64 @@ def partes(seg: str) -> list:
     return [t.strip("'\"") for t in seg.split()]
 
 
+def git_partes(t: list):
+    """Separa `git [opciones globales] <subcomando> <resto>` → (subcomando, carpeta de -C, resto)."""
+    cdir, i = "", 1
+    while i < len(t) and t[i].startswith("-"):
+        if t[i] == "-C" and i + 1 < len(t):
+            cdir = t[i + 1]
+        elif t[i].startswith("-C") and len(t[i]) > 2:
+            cdir = t[i][2:]
+        i += 2 if t[i] in GIT_GLOBAL_CON_VALOR else 1
+    return (t[i].lower() if i < len(t) else ""), cdir, t[i + 1:]
+
+
+def redirecciones(seg: str, comillas: bool = True) -> list:
+    """Destinos de `>` y `>>` fuera de comillas. Si las comillas quedan sin cerrar (un apóstrofe
+    suelto, una comilla escapada) se repite el análisis sin respetarlas."""
+    salida, comilla, i = [], "", 0
+    while i < len(seg):
+        c = seg[i]
+        if c == "\\" and i + 1 < len(seg) and seg[i + 1] in "'\"":
+            i += 1
+        elif comilla:
+            comilla = "" if c == comilla else comilla
+        elif comillas and c in "'\"":
+            comilla = c
+        elif c == ">":
+            m = re.match(r"([|&>]?)\s*(\S+)", seg[i + 1:])
+            if m and not (m.group(1) == "&" and re.fullmatch(r"\d+|-", m.group(2))) and m.group(2)[0] != "&":
+                salida.append(m.group(2).strip("'\""))
+            i += 0 if not m else len(m.group(0))
+        i += 1
+    if comilla and comillas:
+        return redirecciones(seg, False)
+    return salida
+
+
+def descargas(t: list) -> list:
+    """Destinos que escribe un curl/wget/Invoke-WebRequest ('' = carpeta actual, '-' = stdout)."""
+    prog = t[0].lower()
+    opciones, salida = DESCARGAS[prog], []
+    cortas = CORTAS_SALIDA.get(prog, "")
+    for i, x in enumerate(t[1:], 1):
+        base, _, valor = x.partition("=")
+        siguiente = t[i + 1] if i + 1 < len(t) else None
+        if x.lower() in opciones and siguiente is not None:
+            salida.append(siguiente)
+        elif valor and base.lower() in opciones:
+            salida.append(valor)
+        elif cortas and re.match(r"^-[A-Za-z]+$", x) and x[-1] in cortas and siguiente is not None:
+            salida.append(siguiente)            # -o ruta, -fsSLo ruta, -qO ruta
+        elif cortas and re.match(r"^-[%s](.+)$" % cortas, x):
+            salida.append(x[2:])                # -oruta, -Pruta
+        elif prog == "curl" and x in ("-O", "--remote-name"):
+            salida.append("")
+    if prog == "wget" and not salida:
+        salida.append("")
+    return [d for d in salida if d != "-"]
+
+
 def destino(t: list):
     """Devuelve la ruta destino de un comando de copia o de git clone (None si no hay)."""
     prog = t[0].lower()
@@ -98,7 +164,7 @@ def destino(t: list):
         con_valor = {"--depth", "-b", "--branch", "-o", "--origin", "--reference", "-c", "--config",
                      "--filter", "--separate-git-dir", "-j", "--jobs", "-u", "--upload-pack"}
         pos, saltar = [], False
-        for x in t[2:]:
+        for x in git_partes(t)[2]:
             if saltar:
                 saltar = False
             elif x.startswith("-"):
@@ -120,22 +186,59 @@ def destino(t: list):
     return pos[-1] if len(pos) > 1 else None
 
 
+def dentro_de(d: str, dentro: bool) -> bool:
+    """Ruta dentro de ~/.claude/skills|agents|plugins, o relativa después de un cd hacia allá."""
+    return bool(DESTINO.search(d)) or (dentro and not re.match(r"^([a-z]:|[/\\~$])", d, re.I))
+
+
 def motivo(seg: str, dentro: bool):
     for regla, que in REGLAS:
         if re.search(regla, seg, re.I):
             return que
+    for d in redirecciones(seg):
+        if dentro_de(d, dentro):
+            return "escribir un archivo dentro de ~/.claude con una redirección"
     t = partes(seg)
-    es_clone = len(t) > 1 and t[0].lower() == "git" and t[1].lower() == "clone"
-    if es_clone or t[0].lower() in COPIAR:
+    t[0] = re.sub(r"\.exe$", "", t[0].replace("\\", "/").rsplit("/", 1)[-1], flags=re.I)
+    prog = t[0].lower()
+    if prog == "git":
+        sub, cdir, _ = git_partes(t)
+        if sub == "clone":
+            d = destino(t)
+            if DESTINO.search(d) or dentro_de(d, dentro or bool(DESTINO.search(cdir))):
+                return "clonar un repo dentro de ~/.claude"
+        return None
+    if prog in DESCARGAS and any(dentro_de(d, dentro) for d in descargas(t)):
+        return "descargar un archivo dentro de ~/.claude"
+    if prog == "tee" and any(dentro_de(x, dentro) for x in t[1:] if not x.startswith("-")):
+        return "escribir un archivo dentro de ~/.claude con tee"
+    if prog in ("new-item", "ni") and re.search(r"symboliclink|junction", seg, re.I) and \
+            DESTINO.search(re.sub(r"-target\s+\S+", "", seg, flags=re.I)):
+        return "crear un enlace dentro de ~/.claude"
+    if prog in COPIAR:
         d = destino(t)
-        # Destino dentro de ~/.claude, o relativo después de un cd hacia allá
-        if d is not None and (DESTINO.search(d) or (dentro and not re.match(r"^([a-z]:|[/\\~$])", d, re.I))):
-            return "clonar un repo dentro de ~/.claude" if es_clone else "copiar o descomprimir algo dentro de ~/.claude"
+        if d is not None and dentro_de(d, dentro):
+            return "copiar, enlazar o descomprimir algo dentro de ~/.claude"
     return None
 
 
+def bloquear(que: str):
+    sys.stderr.write(
+        f"BLOQUEADO por la Aduana: intento de {que} sin revisión.\n"
+        "Usa la skill `aduana`: trae el origen a ~/.claude/aduana/cuarentena, escanéalo con "
+        "`aduana.py escanear <ruta|url>` e instálalo con `aduana.py promover`. Para npm/plugins "
+        "aprobados, repite el comando con el prefijo ADUANA_OK=1 SOLO después de un PASS o de un "
+        "WARN que la persona aprobó.\n")
+    sys.exit(2)
+
+
+texto = con_shells_anidadas(sin_heredocs(cmd))
+# Las redirecciones se leen del texto entero: `>|` y `>&` se partirían al separar segmentos
+if any(DESTINO.search(d) for d in redirecciones(texto)):
+    bloquear("escribir un archivo dentro de ~/.claude con una redirección")
+
 dentro = False
-for seg in segmentos(con_shells_anidadas(sin_heredocs(cmd))):
+for seg in segmentos(texto):
     t = partes(seg)
     if t[0].lower() in ("cd", "pushd", "set-location", "sl"):
         dentro = len(t) > 1 and bool(DESTINO.search(t[-1]))
@@ -143,12 +246,6 @@ for seg in segmentos(con_shells_anidadas(sin_heredocs(cmd))):
     interior = sin_envoltorio(seg)
     que = motivo(seg, dentro) or (interior and motivo(interior, dentro))
     if que:
-            sys.stderr.write(
-                f"BLOQUEADO por la Aduana: intento de {que} sin revisión.\n"
-                "Usa la skill `aduana`: trae el origen a ~/.claude/aduana/cuarentena, escanéalo con "
-                "`aduana.py escanear <ruta|url>` e instálalo con `aduana.py promover`. Para npm/plugins "
-                "aprobados, repite el comando con el prefijo ADUANA_OK=1 SOLO después de un PASS o de un "
-                "WARN que la persona aprobó.\n")
-            sys.exit(2)
+        bloquear(que)
 
 sys.exit(0)
