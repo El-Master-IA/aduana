@@ -3,7 +3,7 @@
 #   bash skills/aduana/tests/probar.sh   → sale 0 si todo cuadra
 set -u
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=$(command -v python3 >/dev/null 2>&1 && echo python3 || echo python)
+PY=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 A="$AQUI/../scripts/aduana.py"
 TMP="$(mktemp -d)"
 export CLAUDE_DIR="$TMP/claude"
