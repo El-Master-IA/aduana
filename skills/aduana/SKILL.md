@@ -7,7 +7,8 @@ description: Puerta de seguridad obligatoria antes de instalar o abrir cualquier
 
 Nada de terceros entra a `~/.claude` sin pasar por aquí. El script es `scripts/aduana.py`, dentro
 de la carpeta de esta skill (usa la ruta absoluta de esa carpeta). Solo usa la librería estándar de
-Python 3.10+ y necesita la skill `skill-security-auditor` instalada en `~/.claude/skills`.
+Python 3.10+. El análisis estático lo hace una copia revisada de `skill-security-auditor` que viaja en
+`scripts/auditor/` y se verifica por huella antes de cada escaneo: no hay que instalar nada aparte.
 
 ```bash
 A="python -I <carpeta de esta skill>/scripts/aduana.py"

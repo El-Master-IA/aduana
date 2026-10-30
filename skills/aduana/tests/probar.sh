@@ -7,7 +7,6 @@ PY=$(command -v python3 >/dev/null 2>&1 && echo python3 || echo python)
 A="$AQUI/../scripts/aduana.py"
 TMP="$(mktemp -d)"
 export CLAUDE_DIR="$TMP/claude"
-export ADUANA_AUDITOR="$HOME/.claude/skills/skill-security-auditor/scripts/skill_security_auditor.py"
 trap 'rm -rf "$TMP"' EXIT
 FALLAS=0
 
@@ -32,6 +31,11 @@ espera 3 "archivo cambiado tras escanear → re-escanear" "$PY" -I "$A" verifica
 espera 0 "cuarentenar mueve la carpeta"        "$PY" -I "$A" cuarentenar "$TMP/ofensiva"
 [ -d "$CLAUDE_DIR/aduana/cuarentena/ofensiva" ] && [ ! -e "$TMP/ofensiva" ] && echo "ok   está en cuarentena" \
   || { echo "MAL  cuarentena"; FALLAS=$((FALLAS+1)); }
+
+# El auditor interno se fija por huella: una copia alterada no se usa
+cp -r "$AQUI/.." "$TMP/aduana-alterada"
+echo "# cambio" >> "$TMP/aduana-alterada/scripts/auditor/skill_security_auditor.py"
+espera 2 "auditor interno alterado → FAIL" "$PY" -I "$TMP/aduana-alterada/scripts/aduana.py" escanear "$TMP/limpia" --sin-defender
 
 echo "Fallas: $FALLAS"
 exit $FALLAS

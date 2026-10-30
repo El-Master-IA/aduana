@@ -2,8 +2,8 @@
 """
 aduana.py — Puerta de entrada para skills, agentes, plugins y repos de terceros.
 
-No trae patrones propios: combina tres revisiones que ya existen y lleva el registro.
-  1. skill-security-auditor (análisis estático de la skill, instalado en ~/.claude/skills)
+No trae patrones propios: combina tres revisiones y lleva el registro.
+  1. skill-security-auditor (análisis estático), copia fija dentro de esta skill en auditor/
   2. Windows Defender en modo solo-reporte (MpCmdRun -DisableRemediation), si está disponible
   3. Metadatos: `risk: offensive` en el frontmatter y la marca `alerta` de un fuentes.json opcional (--fuentes)
 
@@ -39,11 +39,10 @@ ORDEN = {"PASS": 0, "WARN": 1, "FAIL": 2}
 SALTAR = {".git", "node_modules", "__pycache__"}
 
 AQUI = Path(__file__).resolve().parent
-AUDITOR_CANDIDATOS = [
-    os.environ.get("ADUANA_AUDITOR", ""),
-    str(CLAUDE_DIR / "skills/skill-security-auditor/scripts/skill_security_auditor.py"),
-    str(AQUI.parent.parent / "skill-security-auditor/scripts/skill_security_auditor.py"),
-]
+# Copia revisada de skill-security-auditor (MIT, Alireza Rezvani) que viaja con la Aduana.
+# Se fija por huella: si alguien la cambia, la Aduana no la usa.
+AUDITOR = AQUI / "auditor" / "skill_security_auditor.py"
+AUDITOR_SHA256 = "d74e611a7ec98a5cb24bfd4517620be1f6aab3580cd0b1f803b581b4142d144d"
 DEFENDER_CANDIDATOS = [r"C:\Program Files\Windows Defender\MpCmdRun.exe"]
 
 
@@ -89,10 +88,23 @@ def guardar_registro(reg: dict):
 
 # --- Revisiones ---------------------------------------------------------------
 
+def es_auditor_interno(archivo, base: Path) -> bool:
+    """El auditor se detecta a sí mismo (guarda los patrones que busca). Solo se ignora el
+    archivo cuyo contenido es exactamente la copia revisada, por huella."""
+    try:
+        f = Path(archivo)
+        f = f if f.is_absolute() else base / f
+        return f.name == AUDITOR.name and hashlib.sha256(f.read_bytes()).hexdigest() == AUDITOR_SHA256
+    except (TypeError, OSError):
+        return False
+
+
 def revisar_auditor(ruta: Path) -> dict:
-    auditor = next((c for c in AUDITOR_CANDIDATOS if c and Path(c).is_file()), None)
-    if not auditor:
-        return {"veredicto": "WARN", "error": "skill-security-auditor no está instalado", "hallazgos": []}
+    if not AUDITOR.is_file():
+        return {"veredicto": "WARN", "error": "falta scripts/auditor/ dentro de la skill aduana", "hallazgos": []}
+    if hashlib.sha256(AUDITOR.read_bytes()).hexdigest() != AUDITOR_SHA256:
+        return {"veredicto": "FAIL", "error": "el auditor interno fue modificado (la huella no coincide)", "hallazgos": []}
+    auditor = str(AUDITOR)
     def correr(objetivo) -> dict:
         r = subprocess.run([sys.executable, "-I", auditor, str(objetivo), "--json"],
                            capture_output=True, text=True, encoding="utf-8",
@@ -115,8 +127,12 @@ def revisar_auditor(ruta: Path) -> dict:
     hallazgos = [
         {"severidad": f.get("severity"), "categoria": f.get("category"),
          "archivo": f.get("file"), "linea": f.get("line"), "riesgo": f.get("risk")}
-        for f in datos.get("findings", [])
+        for f in datos.get("findings", []) if not es_auditor_interno(f.get("file"), ruta if ruta.is_dir() else ruta.parent)
     ]
+    if len(hallazgos) < len(datos.get("findings", [])):
+        # Se quitaron los patrones del propio auditor: el veredicto sale de lo que queda.
+        sev = {h["severidad"] for h in hallazgos}
+        v = "FAIL" if "CRITICAL" in sev else "WARN" if "HIGH" in sev else "PASS"
     return {"veredicto": v if v in ORDEN else "WARN", "resumen": datos.get("summary", {}),
             "hallazgos": hallazgos}
 

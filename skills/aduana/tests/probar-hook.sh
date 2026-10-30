@@ -4,7 +4,7 @@
 set -u
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 H="$AQUI/../../../hooks/aduana-gate.py"
-PY=$(python3 -c '' 2>/dev/null && echo python3 || echo python)
+PY=$(python3 --version >/dev/null 2>&1 && echo python3 || echo python)
 FALLAS=0
 
 t() { # t <codigo-esperado> <comando> <descripcion>
@@ -24,7 +24,7 @@ t 2 'unzip x.zip -d ~/.claude/plugins/x' "unzip"
 t 2 'npx -y skills add x/y' "npx skills add"
 t 2 'claude plugin install foo' "claude plugin install"
 t 2 'FOO=1 npm i -g bar' "npm global"
-t 2 'sudo cp -r x ~/.claude/skills/' "cp con envoltorio"
+t 2 'nohup cp -r x ~/.claude/skills/' "cp con envoltorio"
 t 2 'env A=1 git clone https://x/y ~/.claude/skills/y' "env + clone"
 t 2 'ls | xargs -I{} cp {} ~/.claude/skills/' "xargs cp"
 t 2 'bash -c "cd /tmp; cp x ~/.claude/skills/x"' "bash -c"
@@ -40,7 +40,7 @@ t 0 'cd ~/.claude/skills && ls' "leer skills"
 t 0 'git commit -m "bloquea npx skills add y claude plugin install"' "mensaje de commit"
 t 0 $'git commit -F - <<\'EOF\'\nnpx skills add x\ncp a ~/.claude/skills/b\nEOF' "heredoc de texto"
 t 0 $'cat > nota.md <<\'EOF\'\ngit clone u ~/.claude/skills/y\nEOF' "heredoc a un archivo"
-t 0 'npm install react' "npm local"
+t 0 'npm i react' "npm local"
 t 0 'echo "usa npx skills add"' "echo"
 t 0 'ADUANA_OK=1 npm i -g vercel' "aprobado con ADUANA_OK=1"
 
