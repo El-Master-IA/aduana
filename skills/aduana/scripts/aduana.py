@@ -327,6 +327,13 @@ def cmd_promover(a):
 
 def cmd_cuarentenar(a):
     ruta = Path(a.ruta).expanduser().resolve()
+    if not ruta.exists():
+        print(f"No existe: {ruta}", file=sys.stderr)
+        return 3
+    cuarentena = CUARENTENA.resolve()
+    if ruta == cuarentena or cuarentena in ruta.parents or ruta in cuarentena.parents:
+        print(f"La ruta es, o contiene, la carpeta de cuarentena: {ruta}", file=sys.stderr)
+        return 3
     CUARENTENA.mkdir(parents=True, exist_ok=True)
     destino = CUARENTENA / ruta.name
     n = 2
@@ -358,7 +365,7 @@ def main():
     a = ap.parse_args()
     try:
         sys.exit(a.f(a))
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(3)
 
