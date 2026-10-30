@@ -32,6 +32,14 @@ espera 0 "cuarentenar mueve la carpeta"        "$PY" -I "$A" cuarentenar "$TMP/o
 [ -d "$CLAUDE_DIR/aduana/cuarentena/ofensiva" ] && [ ! -e "$TMP/ofensiva" ] && echo "ok   está en cuarentena" \
   || { echo "MAL  cuarentena"; FALLAS=$((FALLAS+1)); }
 
+# cuarentenar: errores reales no deben parecer un veredicto (1 = WARN)
+salida=$("$PY" -I "$A" cuarentenar "$TMP/no/existe" 2>&1); rc=$?
+if [ "$rc" = 3 ] && ! printf '%s' "$salida" | grep -q Traceback; then echo "ok   cuarentenar ruta inexistente → 3 sin traceback"
+else echo "MAL  cuarentenar ruta inexistente (salió $rc)"; FALLAS=$((FALLAS+1)); fi
+espera 3 "cuarentenar algo ya en cuarentena → 3" "$PY" -I "$A" cuarentenar "$CLAUDE_DIR/aduana/cuarentena/ofensiva"
+[ -d "$CLAUDE_DIR/aduana/cuarentena/ofensiva" ] && [ ! -e "$CLAUDE_DIR/aduana/cuarentena/ofensiva-2" ] && echo "ok   lo de la cuarentena sigue en su sitio" \
+  || { echo "MAL  se movió algo dentro de la cuarentena"; FALLAS=$((FALLAS+1)); }
+
 # El auditor interno se fija por huella: una copia alterada no se usa
 cp -r "$AQUI/.." "$TMP/aduana-alterada"
 echo "# cambio" >> "$TMP/aduana-alterada/scripts/auditor/skill_security_auditor.py"
