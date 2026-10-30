@@ -40,9 +40,10 @@ SALTAR = {".git", "node_modules", "__pycache__"}
 
 AQUI = Path(__file__).resolve().parent
 # Copia revisada de skill-security-auditor (MIT, Alireza Rezvani) que viaja con la Aduana.
-# Se fija por huella: si alguien la cambia, la Aduana no la usa.
+# Se fija por huella (con fines de línea LF, para que valga en Windows y en Linux):
+# si alguien la cambia, la Aduana no la usa.
 AUDITOR = AQUI / "auditor" / "skill_security_auditor.py"
-AUDITOR_SHA256 = "d74e611a7ec98a5cb24bfd4517620be1f6aab3580cd0b1f803b581b4142d144d"
+AUDITOR_SHA256 = "ecd1b33b099bdfab786230bebd5fc4c79890b9a44e4551759790bf0ee8ffa4dc"
 DEFENDER_CANDIDATOS = [r"C:\Program Files\Windows Defender\MpCmdRun.exe"]
 
 
@@ -88,13 +89,19 @@ def guardar_registro(reg: dict):
 
 # --- Revisiones ---------------------------------------------------------------
 
+def huella_lf(f: Path) -> str:
+    return hashlib.sha256(f.read_bytes().replace(b"
+", b"
+")).hexdigest()
+
+
 def es_auditor_interno(archivo, base: Path) -> bool:
     """El auditor se detecta a sí mismo (guarda los patrones que busca). Solo se ignora el
     archivo cuyo contenido es exactamente la copia revisada, por huella."""
     try:
         f = Path(archivo)
         f = f if f.is_absolute() else base / f
-        return f.name == AUDITOR.name and hashlib.sha256(f.read_bytes()).hexdigest() == AUDITOR_SHA256
+        return f.name == AUDITOR.name and huella_lf(f) == AUDITOR_SHA256
     except (TypeError, OSError):
         return False
 
@@ -102,7 +109,7 @@ def es_auditor_interno(archivo, base: Path) -> bool:
 def revisar_auditor(ruta: Path) -> dict:
     if not AUDITOR.is_file():
         return {"veredicto": "WARN", "error": "falta scripts/auditor/ dentro de la skill aduana", "hallazgos": []}
-    if hashlib.sha256(AUDITOR.read_bytes()).hexdigest() != AUDITOR_SHA256:
+    if huella_lf(AUDITOR) != AUDITOR_SHA256:
         return {"veredicto": "FAIL", "error": "el auditor interno fue modificado (la huella no coincide)", "hallazgos": []}
     auditor = str(AUDITOR)
     def correr(objetivo) -> dict:
