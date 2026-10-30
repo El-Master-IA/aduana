@@ -90,9 +90,7 @@ def guardar_registro(reg: dict):
 # --- Revisiones ---------------------------------------------------------------
 
 def huella_lf(f: Path) -> str:
-    return hashlib.sha256(f.read_bytes().replace(b"
-", b"
-")).hexdigest()
+    return hashlib.sha256(f.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def es_auditor_interno(archivo, base: Path) -> bool:
@@ -306,6 +304,12 @@ def cmd_promover(a):
     if rc == EXIT["WARN"] and not a.confirmo:
         print("WARN: revisa los hallazgos con la persona y repite con --confirmo si lo aprueba.")
         return 1
+    # Un enlace simbólico puede apuntar fuera de la carpeta revisada (tus llaves, tu home):
+    # copytree lo seguiría y metería en ~/.claude algo que nadie escaneó.
+    enlaces = [p for p in [ruta, *ruta.rglob("*")] if p.is_symlink()] if ruta.is_dir() else []
+    if enlaces:
+        print(f"Trae enlaces simbólicos ({enlaces[0]}). No se instala.")
+        return 2
     destino_dir = CLAUDE_DIR / a.destino
     destino = destino_dir / ruta.name
     if destino.exists():
