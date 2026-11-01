@@ -32,8 +32,16 @@ t 2 "pwsh -NoProfile -Command 'Copy-Item a C:\\x\\.claude\\skills\\b'" "pwsh -Co
 t 2 $'bash <<\'EOF\'\ncp x ~/.claude/skills/x\nEOF' "heredoc a bash"
 t 2 $'cat <<EOF | sh\nnpx skills add x\nEOF' "heredoc a sh"
 t 2 'cp x ~/.claude/skills/x & echo hi' "en segundo plano"
+t 2 'echo aduana.py; git clone https://x/y ~/.claude/skills/y' "aduana.py solo mencionado"
+t 2 'python aduana.py escanear x && git clone https://x/y ~/.claude/skills/y' "aduana.py mezclado con clone"
+t 2 'cat aduana.py | tee x; cp a ~/.claude/skills/a' "aduana.py como argumento de otro comando"
+t 2 'cp -r python aduana.py ~/.claude/skills/' "aduana.py como origen de cp"
+t 2 'python -W aduana.py evil.py && cp a ~/.claude/skills/a' "opcion -W con valor"
 
 # Debe dejar pasar
+t 0 'python3 -I aduana.py x' "python -I aduana.py"
+t 0 'python3 -I ~/.claude/plugins/aduana/skills/aduana/scripts/aduana.py promover ~/.claude/aduana/cuarentena/x' "ejecutar aduana.py"
+t 0 'py aduana.py escanear x' "py aduana.py"
 t 0 'cp ~/.claude/skills/x/ref.png . && ls' "copiar desde skills hacia afuera"
 t 0 'git clone https://x/y D:/tmp/y' "clone a otra carpeta"
 t 0 'cd ~/.claude/skills && ls' "leer skills"

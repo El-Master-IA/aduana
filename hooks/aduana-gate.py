@@ -3,8 +3,9 @@
 en ~/.claude que no pasaron por la skill `aduana`.
 
 Exit 2 = BLOQUEAR (el mensaje de stderr le llega a Claude) | Exit 0 = PERMITIR
-Se deja pasar si el comando usa `aduana.py` o lleva el prefijo ADUANA_OK=1, que Claude
-solo pone después de un PASS o de un WARN aprobado por la persona.
+Se deja pasar el segmento que *ejecuta* `aduana.py` (`python aduana.py ...`) y todo el
+comando si lleva el prefijo ADUANA_OK=1, que Claude solo pone después de un PASS o de un
+WARN aprobado por la persona. Mencionar `aduana.py` en otro lugar no cuenta.
 
 Cada regla mira solo el inicio de cada comando (separado por ; && || | o salto de línea),
 y antes se quitan los cuerpos de heredoc: así un mensaje de commit o un README que
@@ -20,7 +21,7 @@ try:
 except (ValueError, AttributeError):
     sys.exit(0)
 
-if not cmd or "aduana.py" in cmd or re.search(r"\bADUANA_OK=1\b", cmd):
+if not cmd or re.search(r"\bADUANA_OK=1\b", cmd):
     sys.exit(0)
 
 
@@ -72,6 +73,30 @@ def sin_envoltorio(seg: str) -> str:
     while i < len(t) and (t[i].startswith("-") or re.match(r"^\w+=", t[i])):
         i += 1
     return " ".join(t[i:])
+
+
+ENVOLTORIOS = {"sudo", "env", "nohup", "command", "exec", "time", "nice"}
+
+
+def ejecuta_aduana(seg: str) -> bool:
+    """True si el segmento ejecuta aduana.py: `python [opciones] ruta/aduana.py ...` o la ruta directa.
+    Solo se admiten envoltorios conocidos y opciones de python sin valor; un segmento con
+    sustituciones (`$(...)`, comillas invertidas, `<(...)`) nunca se salta."""
+    if re.search(r"\$\(|`|[<>]\(", seg):
+        return False
+    t = partes(seg)
+    if t[0].lower() in ENVOLTORIOS:
+        t = partes(sin_envoltorio(seg)) or t
+    prog = re.sub(r"\.exe$", "", t[0].replace("\\", "/").rsplit("/", 1)[-1].lower())
+    if prog == "aduana.py":
+        return True
+    if not re.match(r"^(python[\d.]*|py)$", prog):
+        return False
+    for x in t[1:]:
+        if x in ("-I", "-E", "-s", "-S", "-B", "-u", "-O", "-OO", "-q"):
+            continue
+        return not x.startswith("-") and x.replace("\\", "/").rsplit("/", 1)[-1] == "aduana.py"
+    return False
 
 
 DESTINO = re.compile(r"\.claude[/\\]+(skills|agents|plugins)\b", re.I)
@@ -139,6 +164,8 @@ for seg in segmentos(con_shells_anidadas(sin_heredocs(cmd))):
     t = partes(seg)
     if t[0].lower() in ("cd", "pushd", "set-location", "sl"):
         dentro = len(t) > 1 and bool(DESTINO.search(t[-1]))
+        continue
+    if ejecuta_aduana(seg):
         continue
     interior = sin_envoltorio(seg)
     que = motivo(seg, dentro) or (interior and motivo(interior, dentro))
